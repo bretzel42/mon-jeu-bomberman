@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bomberman Game</title>
+  <style>
+    #ui { text-align: center; font-size: 30px; margin-bottom: 5px;background-color: grey;}
+    canvas { border: 1px solid black; display: block; margin: 0 auto;}
+    #fullscreen-button {
+      position: absolute;
+      /*top: 10px;
+      right: 10px;
+      width: 32px;
+      height: 32px;*/
+      background-color: #ccc;
+      border-radius: 5px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 30px;
+      user-select: none; /* Prevent text selection on click */
+  }
+  #fullscreen-button:hover {
+      background-color: #ddd;
+  }
+
+  /* Styles for fullscreen mode */
+  html:-webkit-full-screen canvas {
+      height: 90vh !important;
+      width: auto !important; /* Adjust width to maintain aspect ratio or fill width */
+      margin: 0 auto !important; /* Center horizontally */
+      display: block !important;
+  }
+  html:-moz-full-screen canvas {
+      height: 90vh !important;
+      width: auto !important;
+      margin: 0 auto !important;
+      display: block !important;
+  }
+  html:fullscreen canvas {
+      height: 90vh !important;
+      width: auto !important;
+      margin: 0 auto !important;
+      display: block !important;
+  }
+  html:-ms-fullscreen canvas {
+      height: 90vh !important;
+      width: auto !important;
+      margin: 0 auto !important;
+      display: block !important;
+  }
+  </style>
+</head>
+<body>
+  <div id="fullscreen-button">Fullscreen</div>
+  <div id="ui"></div>
+  <canvas id="gameCanvas" width="640" height="480"></canvas>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const fullscreenButton = document.getElementById('fullscreen-button');
+
+    fullscreenButton.addEventListener('click', () => {
+        if (!document.fullscreenElement &&    // alternative standard method
+            !document.mozFullScreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement ) {  // current working methods
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          } else if (document.documentElement.msRequestFullscreen) {
+            document.documentElement.msRequestFullscreen();
+          } else if (document.documentElement.mozRequestFullScreen) {
+            document.documentElement.mozRequestFullScreen();
+          } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+          } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          }
+        }
+    });
+
+    const tileSize = 32;
+    let player = { x: 1, y: 1, alive: true, lives: 1 };
+    let player2 = { x: 18, y: 13, alive: true, lives: 1 };
+    let bots = [
+      { x: 10, y: 1, alive: true },
+      { x: 18, y: 8, alive: true },
+      { x: 5, y: 13, alive: true },
+      { x: 12, y: 10, alive: true },
+      { x: 3, y: 7, alive: true },
+      { x: 15, y: 5, alive: true }
+    ];
+    const bombs = [];
+    const bombTime = 2000;
+    const wallImg = new Image(); wallImg.src = './images/wall.png';
+    const wallUnbreakableImg = new Image(); wallUnbreakableImg.src = './images/wall_unbreakable.png';
+    const playerImg = new Image(); playerImg.src = './images/bomberman.png';
+    const player2Img = new Image(); player2Img.src = './images/player 2.png';
+    const botImg = new Image(); botImg.src = './images/bomberman_bot.png';
+    const bombImgs = ['./images/bomb1.png','./images/bomb2.png','./images/bomb3.png']
+      .map(src => { let img = new Image(); img.src = src; return img; });
+    const explosionImgs = ['./images/explosion1.png','./images/explosion2.png','./images/explosion3.png']
+      .map(src => { let img = new Image(); img.src = src; return img; });
+    const groundImg = new Image(); groundImg.src = './images/ground.png';
+    const lifeImg = new Image(); lifeImg.src = './images/life.png';
+    const explosionSound = new Audio('./sons/bomb_explosion.mp3');
+    let map = [
+      "####################",
+      "#  X  #            #",
+      "# ### #X# ## ## ## #",
+      "# #   #   #   # ## #",
+      "# # # ### ###X#    #",
+      "#       # # # #### #",
+      "# ### #X# # #      #",
+      "#   # # # # ###### #",
+      "# ### # # #        #",
+      "#  #  # X ### #### #",
+      "#     #       X    #",
+      "#  #### # #####    #",
+      "#  #  # # #   #    #",
+      "#  #      #     ## #",
+      "####################"
+    ].map(row => row.split(''));
+    let lifePickup = null;
+    function spawnLifePickup() {
+      let empties = [];
+      for (let y = 0; y < map.length; y++)
+        for (let x = 0; x < map[y].length; x++)
+          if (map[y][x] === ' ') empties.push({ x, y });
+      if (empties.length) lifePickup = empties[Math.floor(Math.random()*empties.length)];
+    }
+    function checkLifePickup(p) {
+      if (lifePickup && p.x === lifePickup.x && p.y === lifePickup.y) {
+        p.lives++;
+        lifePickup = null;
+        spawnLifePickup();
+      }
+    }
+    function updateUI() {
+      const ui = document.getElementById('ui');
+      ui.innerHTML = `<img src="./images/bomberman.png" width="${tileSize}" height="${tileSize}"> x ${player.lives}
+                      &nbsp;&nbsp;&nbsp;
+                      <img src="./images/player 2.png" width="${tileSize}" height="${tileSize}"> x ${player2.lives}`;
+    }
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < map[y].length; x++) {
+          ctx.drawImage(groundImg, x * tileSize, y * tileSize, tileSize, tileSize);
+          if (map[y][x] === '#') ctx.drawImage(wallImg, x * tileSize, y * tileSize, tileSize, tileSize);
+          if (map[y][x] === 'X') ctx.drawImage(wallUnbreakableImg, x * tileSize, y * tileSize, tileSize, tileSize);
+        }
+      }
+      if (lifePickup) ctx.drawImage(lifeImg, lifePickup.x * tileSize, lifePickup.y * tileSize, tileSize, tileSize);
+      if (player.alive) ctx.drawImage(playerImg, player.x * tileSize, player.y * tileSize, tileSize, tileSize);
+      if (player2.alive) ctx.drawImage(player2Img, player2.x * tileSize, player2.y * tileSize, tileSize, tileSize);
+      bots.forEach(bot => { if (bot.alive) ctx.drawImage(botImg, bot.x * tileSize, bot.y * tileSize, tileSize, tileSize); });
+      bombs.forEach(bomb => {
+        const imgs = bomb.exploding ? explosionImgs : bombImgs;
+        ctx.drawImage(imgs[bomb.frame], bomb.x * tileSize, bomb.y * tileSize, tileSize, tileSize);
+      });
+      updateUI();
+    }
+    function movePlayer(dx, dy) {
+      if (!player.alive) return;
+      const newX = player.x + dx, newY = player.y + dy;
+      if (map[newY][newX] === ' ') { player.x = newX; player.y = newY; }
+      checkLifePickup(player);
+    }
+    function movePlayer2(dx, dy) {
+      if (!player2.alive) return;
+      const newX = player2.x + dx, newY = player2.y + dy;
+      if (map[newY][newX] === ' ') { player2.x = newX; player2.y = newY; }
+      checkLifePickup(player2);
+    }
+    function placeBomb(x, y) {
+      const bomb = { x, y, frame: 0, exploding: false };
+      bombs.push(bomb);
+      const interval = setInterval(() => { bomb.frame++; if (bomb.frame >= bombImgs.length) bomb.frame = bombImgs.length - 1; },
+        bombTime / bombImgs.length);
+      setTimeout(() => { clearInterval(interval); explodeBomb(bomb); }, bombTime);
+    }
+    function explodeBomb(bomb) {
+      bomb.exploding = true; bomb.frame = 0;
+      explosionSound.currentTime = 0; explosionSound.play();
+      [[0, -1], [1, 0], [0, 1], [-1, 0], [0, 0]].forEach(([dx, dy]) => {
+        const nx = bomb.x + dx, ny = bomb.y + dy;
+        if (map[ny] && map[ny][nx] === '#') map[ny][nx] = ' ';
+        if (map[ny] && map[ny][nx] === 'X') {}
+        if (player.x === nx && player.y === ny) { player.lives--; if (player.lives <= 0) player.alive = false; }
+        if (player2.x === nx && player2.y === ny) { player2.lives--; if (player2.lives <= 0) player2.alive = false; }
+        bots.forEach(bot => { if (bot.x === nx && bot.y === ny) bot.alive = false; });
+      });
+      const explosionInterval = setInterval(() => {
+        bomb.frame++;
+        if (bomb.frame >= explosionImgs.length) { clearInterval(explosionInterval); bombs.splice(bombs.indexOf(bomb), 1); }
+        draw();
+      }, 150);
+    }
+    function botCanEscape(bot) {
+      return [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }]
+        .some(dir => { const newX = bot.x + dir.dx, newY = bot.y + dir.dy; return map[newY] && map[newY][newX] === ' '; });
+    }
+    function moveBots() {
+      bots.forEach(bot => {
+        if (!bot.alive) return;
+        const directions = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+        const safeDirs = directions.filter(dir => map[bot.y + dir.dy] && map[bot.y + dir.dy][bot.x + dir.dx] === ' ');
+        if (safeDirs.length) { const dir = safeDirs[Math.floor(Math.random() * safeDirs.length)]; bot.x += dir.dx; bot.y += dir.dy; }
+        if (Math.random() < 0.1 && botCanEscape(bot)) { placeBomb(bot.x, bot.y); }
+      });
+      draw();
+    }
+    setInterval(moveBots, 500);
+    window.addEventListener('keydown', e => {
+      switch (e.key) {
+        case 'ArrowUp': movePlayer(0, -1); break;
+        case 'ArrowDown': movePlayer(0, 1); break;
+        case 'ArrowLeft': movePlayer(-1, 0); break;
+        case 'ArrowRight': movePlayer(1, 0); break;
+        case ' ': placeBomb(player.x, player.y); break;
+        case 'z': movePlayer2(0, -1); break;
+        case 's': movePlayer2(0, 1); break;
+        case 'q': movePlayer2(-1, 0); break;
+        case 'd': movePlayer2(1, 0); break;
+        case 'e': placeBomb(player2.x, player2.y); break;
+      }
+      draw();
+    });
+    let loaded = 0;
+    const imgs = [groundImg, wallImg, wallUnbreakableImg, playerImg, player2Img, botImg, lifeImg, ...bombImgs, ...explosionImgs];
+    imgs.forEach(img => img.onload = () => { if (++loaded === imgs.length) { spawnLifePickup(); draw(); }});
+  </script>
+</body>
+</html>
